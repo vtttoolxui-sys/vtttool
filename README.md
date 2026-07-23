@@ -1,11 +1,12 @@
 # vtttool
 
 A standalone tool that extracts subtitles from video streams on an Xtream/XUI
-server (IPTV panel) so they can be used by a webOS app. The webOS client can't
-pull subtitles out of MKV files itself without streaming the whole file through
-a second time in parallel with playback (double bandwidth/load) — so ffmpeg
-runs server-side instead (once per movie/episode), and the result is saved as
-small `.vtt` files that the app fetches directly afterwards.
+server (IPTV panel) so they can be used by a webOS app (LG TV). The webOS
+client can't pull subtitles out of MKV files itself without streaming the
+whole file through a second time in parallel with playback (double
+bandwidth/load) — so ffmpeg runs server-side instead (once per movie/episode),
+and the result is saved as small `.vtt` files that the app fetches directly
+afterwards.
 
 Uses exclusively the Xtream API (`player_api.php`) to fetch the movie/episode
 lists — not a direct database connection to XUI.
@@ -92,7 +93,7 @@ Remember to open the port in your firewall (`ufw allow <port>` if using ufw).
 
 ## TV app access
 
-A webOS (or any other) TV app doesn't log in with the webif username/password
+A webOS (LG TV, or any other) TV app doesn't log in with the webif username/password
 — it authenticates with the separate `subs_api_key` instead, passed as a `key`
 query parameter, since HTML5's `<track src>` can't send custom headers, only a
 plain URL:
