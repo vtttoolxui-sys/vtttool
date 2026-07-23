@@ -15,6 +15,7 @@
   header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
   header h1 { font-size: 1.25rem; margin: 0; }
   header h1 span { color: var(--accent); }
+  header h1 span.version { color: var(--muted); font-size: .75rem; font-weight: 400; }
   main { max-width: 1000px; margin: 0 auto; padding: 1.5rem; }
   nav { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
   nav button { background: var(--panel); border: 1px solid var(--border); color: var(--muted); padding: .5rem 1rem; border-radius: .5rem; cursor: pointer; font-size: .9rem; }
@@ -87,7 +88,7 @@
 
 <div id="app" class="hidden">
   <header>
-    <h1>vtt<span>tool</span></h1>
+    <h1>vtt<span>tool</span> <span class="version" id="version-tag"></span></h1>
     <button class="btn secondary small" id="logout-btn" onclick="doLogout()">Log out</button>
   </header>
   <main>
@@ -472,6 +473,7 @@ async function checkFfmpeg() {
     const data = await res.json();
     document.getElementById('ffmpeg-warning').classList.toggle('hidden', data.ffmpeg !== false);
     document.getElementById('ffmpeg-error-code').textContent = data.ffmpegError ? ` (${data.ffmpegError})` : '';
+    if (data.version) document.getElementById('version-tag').textContent = 'v' + data.version;
   } catch (e) {}
 }
 

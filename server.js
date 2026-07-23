@@ -7,6 +7,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const VERSION = require('./package.json').version;
 
 const PORT = process.env.PORT || 35600;
 const DB_PATH = path.join(__dirname, 'data', 'app.db');
@@ -629,7 +630,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'alive', ffmpeg: ffmpegAvailable, ffmpegError: ffmpegCheckError }));
+app.get('/api/health', (req, res) => res.json({ status: 'alive', version: VERSION, ffmpeg: ffmpegAvailable, ffmpegError: ffmpegCheckError }));
 
 // ── Auth endpoints (no authentication required) ─────────────────────────────
 app.get('/api/auth-check', (req, res) => {
