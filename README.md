@@ -43,11 +43,22 @@ git — see `.gitignore`.
 
 ## Prerequisites
 
-- **Node.js** 18+ (developed/deployed on v22)
-- **ffmpeg** — must be installed and on `PATH`; this is what actually does the
-  subtitle detection and extraction. On Ubuntu/Debian: `apt install ffmpeg`
+- **Node.js** 18+ (developed/deployed on v22) — unrelated to any IPTV panel
+  software, safe to install independently
+- **ffmpeg** — must be on `PATH`; this is what actually does the subtitle
+  detection and extraction.
+  **⚠ If this server also runs an XUI/Xtream Codes panel, run `which ffmpeg`
+  first before installing anything.** Panels commonly symlink
+  `/usr/bin/ffmpeg` to their own bundled build (e.g.
+  `/home/xtreamcodes/.../bin/ffmpeg`), which the panel's own live transcoding
+  depends on. If `ffmpeg` already resolves to something, vtttool can just use
+  that one as-is — do **not** `apt install ffmpeg` on a panel box, since that
+  will silently overwrite the symlink and replace the panel's custom build
+  with a generic one. Only install fresh (`apt install ffmpeg` on
+  Ubuntu/Debian) if the server has no ffmpeg at all yet.
 - **curl** — only needed if you set a max bandwidth per extraction
-  (`subs_max_bandwidth_mbit` > 0); usually already present on Ubuntu
+  (`subs_max_bandwidth_mbit` > 0); a standard system package, unrelated to any
+  panel install, safe either way
 
 ## Run it yourself
 
