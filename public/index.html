@@ -92,8 +92,10 @@
   </header>
   <main>
     <div class="panel ffmpeg-warning hidden" id="ffmpeg-warning">
-      ⚠ <strong>ffmpeg not found on this server.</strong> Subtitle extraction will fail until
-      it's installed (e.g. <code>apt install ffmpeg</code>) and the service is restarted.
+      ⚠ <strong>ffmpeg check failed<span id="ffmpeg-error-code"></span>.</strong> Subtitle
+      extraction will fail until this is resolved and the service is restarted. If this box
+      also runs an XUI/Xtream Codes panel, check <code>which ffmpeg</code> before installing
+      anything — don't overwrite its existing ffmpeg symlink.
     </div>
 
     <div class="panel queue-panel" id="queue-panel">
@@ -469,6 +471,7 @@ async function checkFfmpeg() {
     const res = await fetch('/api/health');
     const data = await res.json();
     document.getElementById('ffmpeg-warning').classList.toggle('hidden', data.ffmpeg !== false);
+    document.getElementById('ffmpeg-error-code').textContent = data.ffmpegError ? ` (${data.ffmpegError})` : '';
   } catch (e) {}
 }
 

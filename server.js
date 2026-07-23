@@ -15,10 +15,18 @@ fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 // Extraction hard-depends on ffmpeg being on PATH — without it every extraction fails with a
 // cryptic ENOENT deep in a child_process call. Checked once at startup (not per-request) so
 // the failure is loud and immediate instead of surfacing later as a confusing per-item error.
+// Reports the underlying error code too (not just true/false) — e.g. ENOENT usually means
+// ffmpeg isn't on PATH at all (or, on an XUI box, that the panel's symlink is dangling because
+// its target got moved/removed), while EACCES points at a permissions problem on the binary
+// itself, which "is ffmpeg installed?" alone can't distinguish.
 let ffmpegAvailable = null;
+let ffmpegCheckError = null;
 function checkFfmpegAvailable() {
   return new Promise(resolve => {
-    execFile('ffmpeg', ['-version'], { timeout: 5000 }, (err) => resolve(!err));
+    execFile('ffmpeg', ['-version'], { timeout: 5000 }, (err) => {
+      ffmpegCheckError = err ? (err.code || err.message) : null;
+      resolve(!err);
+    });
   });
 }
 
@@ -621,7 +629,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'alive', ffmpeg: ffmpegAvailable }));
+app.get('/api/health', (req, res) => res.json({ status: 'alive', ffmpeg: ffmpegAvailable, ffmpegError: ffmpegCheckError }));
 
 // ── Auth endpoints (no authentication required) ─────────────────────────────
 app.get('/api/auth-check', (req, res) => {
@@ -915,7 +923,7 @@ app.get('/api/subs/queue', (req, res) => {
 async function startup() {
   ffmpegAvailable = await checkFfmpegAvailable();
   if (!ffmpegAvailable) {
-    console.error(`[${new Date().toISOString()}] WARNING: ffmpeg not found on PATH — subtitle extraction will fail until it's installed (e.g. "apt install ffmpeg") and the service is restarted.`);
+    console.error(`[${new Date().toISOString()}] WARNING: ffmpeg check failed (${ffmpegCheckError}) — subtitle extraction will fail until this is resolved and the service is restarted. ENOENT usually means ffmpeg isn't on PATH (or, on an XUI box, that its ffmpeg symlink is dangling); EACCES means the binary exists but isn't executable by this user.`);
   }
   scheduleJobs();
   app.listen(PORT, () => {
