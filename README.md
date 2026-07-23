@@ -41,6 +41,14 @@ data/subs/series/<episode_id>/<lang>.vtt   – one file per language, per episod
 (e.g. `eng`, `dan`). `data/` (including the SQLite database) is not tracked in
 git — see `.gitignore`.
 
+## Prerequisites
+
+- **Node.js** 18+ (developed/deployed on v22)
+- **ffmpeg** — must be installed and on `PATH`; this is what actually does the
+  subtitle detection and extraction. On Ubuntu/Debian: `apt install ffmpeg`
+- **curl** — only needed if you set a max bandwidth per extraction
+  (`subs_max_bandwidth_mbit` > 0); usually already present on Ubuntu
+
 ## Run it yourself
 
 ```
@@ -49,6 +57,11 @@ node server.js
 ```
 
 Listens on the port from the `PORT` env var, defaults to **35600** if unset.
+
+To run it as a systemd service instead, see `vtttool.service` — adjust
+`WorkingDirectory` to wherever you cloned the repo and copy it to
+`/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now vtttool`.
+Remember to open the port in your firewall (`ufw allow <port>` if using ufw).
 
 ## Access
 
