@@ -51,6 +51,7 @@
   .progress-fill { height: 100%; background: var(--accent2); transition: width .3s; }
   .queue-panel { display: none; }
   .queue-panel.show { display: block; }
+  .ffmpeg-warning { background: rgba(248,113,113,.12); border-color: var(--danger); color: var(--danger); font-size: .85rem; }
   .queue-current { background: var(--panel2); border-radius: .5rem; padding: .6rem .9rem; margin-bottom: .75rem; }
   .queue-current-title { font-size: .85rem; display: flex; justify-content: space-between; }
   .queue-current-title .pct { color: var(--accent2); font-weight: 600; }
@@ -90,6 +91,11 @@
     <button class="btn secondary small" id="logout-btn" onclick="doLogout()">Log out</button>
   </header>
   <main>
+    <div class="panel ffmpeg-warning hidden" id="ffmpeg-warning">
+      ⚠ <strong>ffmpeg not found on this server.</strong> Subtitle extraction will fail until
+      it's installed (e.g. <code>apt install ffmpeg</code>) and the service is restarted.
+    </div>
+
     <div class="panel queue-panel" id="queue-panel">
       <h2>Queue</h2>
       <div class="queue-current hidden" id="queue-current">
@@ -458,9 +464,18 @@ async function testXtream() {
   msg.className = 'msg ' + (data.ok ? 'ok' : 'err');
 }
 
+async function checkFfmpeg() {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    document.getElementById('ffmpeg-warning').classList.toggle('hidden', data.ffmpeg !== false);
+  } catch (e) {}
+}
+
 function init() {
   loadMovies();
   pollQueue();
+  checkFfmpeg();
 }
 
 checkAuth();

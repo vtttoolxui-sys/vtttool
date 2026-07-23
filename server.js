@@ -12,6 +12,16 @@ const PORT = process.env.PORT || 35600;
 const DB_PATH = path.join(__dirname, 'data', 'app.db');
 fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 
+// Extraction hard-depends on ffmpeg being on PATH — without it every extraction fails with a
+// cryptic ENOENT deep in a child_process call. Checked once at startup (not per-request) so
+// the failure is loud and immediate instead of surfacing later as a confusing per-item error.
+let ffmpegAvailable = null;
+function checkFfmpegAvailable() {
+  return new Promise(resolve => {
+    execFile('ffmpeg', ['-version'], { timeout: 5000 }, (err) => resolve(!err));
+  });
+}
+
 // ── Local SQLite ──────────────────────────────────────────────────────────────
 const db = new Database(DB_PATH);
 db.exec(`
@@ -611,7 +621,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'alive' }));
+app.get('/api/health', (req, res) => res.json({ status: 'alive', ffmpeg: ffmpegAvailable }));
 
 // ── Auth endpoints (no authentication required) ─────────────────────────────
 app.get('/api/auth-check', (req, res) => {
@@ -902,8 +912,14 @@ app.get('/api/subs/queue', (req, res) => {
   });
 });
 
-scheduleJobs();
-
-app.listen(PORT, () => {
-  console.log(`[${new Date().toISOString()}] vtttool listening on port ${PORT}`);
-});
+async function startup() {
+  ffmpegAvailable = await checkFfmpegAvailable();
+  if (!ffmpegAvailable) {
+    console.error(`[${new Date().toISOString()}] WARNING: ffmpeg not found on PATH — subtitle extraction will fail until it's installed (e.g. "apt install ffmpeg") and the service is restarted.`);
+  }
+  scheduleJobs();
+  app.listen(PORT, () => {
+    console.log(`[${new Date().toISOString()}] vtttool listening on port ${PORT}${ffmpegAvailable ? '' : ' (ffmpeg missing!)'}`);
+  });
+}
+startup();
