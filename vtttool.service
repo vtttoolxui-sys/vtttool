@@ -1,0 +1,15 @@
+[Unit]
+Description=vtttool - subtitle extraction for webOS from XUI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vtttool
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=35600
+
+[Install]
+WantedBy=multi-user.target
