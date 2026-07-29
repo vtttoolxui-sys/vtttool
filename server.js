@@ -514,7 +514,7 @@ async function extractEpisodeSubs(episodeId, meta) {
 // ONE shared queue for both movies and series episodes — never more than one ffmpeg/curl
 // extraction running at a time. currentType follows currentId everywhere, since movie and
 // episode ids can collide (two different Xtream id spaces).
-const subsQueueState = { running: false, queue: [], done: 0, total: 0, errors: 0, current: null, currentId: null, currentType: null, currentProgressPct: 0, currentProc: null, currentKilledManually: false };
+const subsQueueState = { running: false, queue: [], done: 0, total: 0, errors: 0, current: null, currentId: null, currentType: null, currentProgressPct: 0, currentProc: null, currentKilledManually: false, lastCompleted: null };
 
 async function runSubsQueue() {
   if (subsQueueState.running) return;
@@ -534,6 +534,17 @@ async function runSubsQueue() {
       }
       catch (e) { err = e; subsQueueState.errors++; }
       subsQueueState.done++;
+      // Fetch the row's final state fresh so the frontend can patch just this one row instead
+      // of re-fetching and re-rendering the entire (possibly 10,000+ row) list on every single
+      // completion — that full-list rebuild is what was making the page unresponsive.
+      const row = item.type === 'episode'
+        ? db.prepare('SELECT id, status, languages, error, duration_sec, updated_at FROM series_subs_status WHERE id=?').get(item.id)
+        : db.prepare('SELECT stream_id AS id, status, languages, error, duration_sec, updated_at FROM vod_subs_status WHERE stream_id=?').get(item.id);
+      subsQueueState.lastCompleted = row ? {
+        id: row.id, type: item.type, status: row.status,
+        languages: row.languages ? JSON.parse(row.languages) : [],
+        error: row.error, duration_sec: row.duration_sec, updated_at: row.updated_at,
+      } : null;
       if (item.resolvers) {
         const response = err ? { ok: false, error: String(err.message || err) } : { ok: true, ...result };
         item.resolvers.forEach(fn => fn(response));
@@ -971,6 +982,7 @@ app.get('/api/subs/queue', (req, res) => {
     remaining: subsQueueState.queue.length,
     errors: subsQueueState.errors,
     queueItems: subsQueueState.queue.map(i => ({ id: i.id, type: i.type, title: i.title })),
+    lastCompleted: subsQueueState.lastCompleted,
   });
 });
 

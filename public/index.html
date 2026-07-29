@@ -361,28 +361,20 @@ function updateSortIndicators(sectionId, sort) {
   });
 }
 
-function renderMovies(list) {
-  const body = document.getElementById('movies-body');
-  if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="search-empty-hint">No matching titles.</td></tr>'; return; }
-  body.innerHTML = list.map(m => `
-    <tr data-type="movie" data-id="${m.id}">
+function movieRowHtml(m) {
+  return `<tr data-type="movie" data-id="${m.id}">
       <td>${escapeHtml(m.title)}</td>
       <td>${formatDate(m.added)}</td>
       <td class="status-cell">${statusCellHtml('movie', m.id, m.status, m.error, m.duration_sec)}</td>
       <td>${m.status === 'done' || m.status === 'no_subs' || m.status === 'error' ? formatDate(m.updated_at) : '—'}</td>
       <td>${(m.languages||[]).join(', ')}</td>
       <td>${rowActionButtons('movie', m.id, m.status)}</td>
-    </tr>`).join('');
-  applyQueueToRows();
+    </tr>`;
 }
 
-function renderEpisodes(list) {
-  const body = document.getElementById('episodes-body');
-  if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="search-empty-hint">No matching titles.</td></tr>'; return; }
-  body.innerHTML = list.map(ep => {
-    const se = `S${String(ep.season_num ?? '?').padStart(2,'0')}E${String(ep.episode_num ?? '?').padStart(2,'0')}`;
-    return `
-    <tr data-type="episode" data-id="${ep.id}">
+function episodeRowHtml(ep) {
+  const se = `S${String(ep.season_num ?? '?').padStart(2,'0')}E${String(ep.episode_num ?? '?').padStart(2,'0')}`;
+  return `<tr data-type="episode" data-id="${ep.id}">
       <td>${escapeHtml(ep.series_name)}</td>
       <td>${se}${ep.episode_title ? ' — ' + escapeHtml(ep.episode_title) : ''}</td>
       <td>${formatDate(ep.added)}</td>
@@ -391,7 +383,19 @@ function renderEpisodes(list) {
       <td>${(ep.languages||[]).join(', ')}</td>
       <td>${rowActionButtons('episode', ep.id, ep.status)}</td>
     </tr>`;
-  }).join('');
+}
+
+function renderMovies(list) {
+  const body = document.getElementById('movies-body');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  body.innerHTML = list.map(movieRowHtml).join('');
+  applyQueueToRows();
+}
+
+function renderEpisodes(list) {
+  const body = document.getElementById('episodes-body');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  body.innerHTML = list.map(episodeRowHtml).join('');
   applyQueueToRows();
 }
 
@@ -501,7 +505,6 @@ function escapeHtml(s) {
 }
 
 let lastQueueState = null;
-let lastDoneCount = null;
 
 function applyQueueToRows() {
   // Clear any leftover progress markers first (fresh row render has none active yet).
@@ -551,6 +554,30 @@ function renderQueuePanel(q) {
   }
 }
 
+// Patches a single finished item in place — in the cached array (so search/sort/reload later
+// stay correct) and, if that row happens to be visible right now, in the DOM directly — instead
+// of re-fetching and re-rendering the entire (possibly 10,000+ row) list on every completion,
+// which is what was making the page unresponsive during a batch run.
+let lastCompletedKey = null;
+function applyLastCompleted(lastCompleted) {
+  if (!lastCompleted) return;
+  const key = `${lastCompleted.type}:${lastCompleted.id}:${lastCompleted.updated_at}`;
+  if (key === lastCompletedKey) return;
+  lastCompletedKey = key;
+
+  const list = lastCompleted.type === 'movie' ? allMovies : allEpisodes;
+  const item = list.find(x => x.id === lastCompleted.id);
+  if (!item) return;
+  Object.assign(item, {
+    status: lastCompleted.status, languages: lastCompleted.languages,
+    error: lastCompleted.error, duration_sec: lastCompleted.duration_sec, updated_at: lastCompleted.updated_at,
+  });
+
+  const row = document.querySelector(`tr[data-type="${lastCompleted.type}"][data-id="${lastCompleted.id}"]`);
+  if (!row) return; // not currently rendered (filtered out, or on the other tab) — array is still up to date
+  row.outerHTML = lastCompleted.type === 'movie' ? movieRowHtml(item) : episodeRowHtml(item);
+}
+
 async function pollQueue() {
   if (queuePollTimer) return;
   const tick = async () => {
@@ -561,11 +588,7 @@ async function pollQueue() {
       if (q.running && q.currentId != null) {
         updateRowProgress(q.currentType, q.currentId, q.currentProgressPct || 0);
       }
-      if (lastDoneCount !== null && q.done !== lastDoneCount) {
-        if (currentTab === 'movies') loadMovies();
-        if (currentTab === 'episodes') loadEpisodes();
-      }
-      lastDoneCount = q.done;
+      applyLastCompleted(q.lastCompleted);
     } catch (e) {}
   };
   await tick();
