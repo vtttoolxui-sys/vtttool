@@ -48,6 +48,9 @@
   .badge.extracting { background: rgba(56,189,248,.15); color: var(--accent2); }
   .badge.unknown, .badge.pending { background: rgba(251,191,36,.15); color: var(--warn); }
   .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap; }
+  .toolbar > div { display: flex; align-items: center; gap: .6rem; }
+  .search-box { width: 220px; padding: .4rem .6rem; background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: .4rem; font-size: .85rem; }
+  .search-empty-hint { color: var(--muted); font-size: .85rem; }
   .progress-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: .4rem; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--accent2); transition: width .3s; }
   .queue-panel { display: none; }
@@ -122,6 +125,7 @@
       <div class="toolbar">
         <div>
           <button class="btn secondary small" onclick="loadMovies(true)">Reload list</button>
+          <input type="text" class="search-box" id="movies-search" placeholder="Search titles…" oninput="onMoviesSearch()">
         </div>
         <button class="btn" onclick="extractBatch('movie')">Extract all missing</button>
       </div>
@@ -137,6 +141,7 @@
       <div class="toolbar">
         <div>
           <button class="btn secondary small" onclick="loadEpisodes(true)">Reload list</button>
+          <input type="text" class="search-box" id="episodes-search" placeholder="Search titles…" oninput="onEpisodesSearch()">
         </div>
         <button class="btn" onclick="extractBatch('episode')">Extract all missing</button>
       </div>
@@ -279,20 +284,70 @@ function statusCellHtml(type, id, status, error) {
     </div>`;
 }
 
+let allMovies = [];
+let allEpisodes = [];
+let moviesSearchTimer = null;
+let episodesSearchTimer = null;
+
+function renderMovies(list) {
+  const body = document.getElementById('movies-body');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  body.innerHTML = list.map(m => `
+    <tr data-type="movie" data-id="${m.id}">
+      <td>${escapeHtml(m.title)}</td>
+      <td class="status-cell">${statusCellHtml('movie', m.id, m.status, m.error)}</td>
+      <td>${(m.languages||[]).join(', ')}</td>
+      <td>${rowActionButtons('movie', m.id, m.status)}</td>
+    </tr>`).join('');
+  applyQueueToRows();
+}
+
+function renderEpisodes(list) {
+  const body = document.getElementById('episodes-body');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  body.innerHTML = list.map(ep => {
+    const se = `S${String(ep.season_num ?? '?').padStart(2,'0')}E${String(ep.episode_num ?? '?').padStart(2,'0')}`;
+    return `
+    <tr data-type="episode" data-id="${ep.id}">
+      <td>${escapeHtml(ep.series_name)}</td>
+      <td>${se}${ep.episode_title ? ' — ' + escapeHtml(ep.episode_title) : ''}</td>
+      <td class="status-cell">${statusCellHtml('episode', ep.id, ep.status, ep.error)}</td>
+      <td>${(ep.languages||[]).join(', ')}</td>
+      <td>${rowActionButtons('episode', ep.id, ep.status)}</td>
+    </tr>`;
+  }).join('');
+  applyQueueToRows();
+}
+
+function matchesSearch(title, term) {
+  return !term || title.toLowerCase().includes(term);
+}
+
+function onMoviesSearch() {
+  clearTimeout(moviesSearchTimer);
+  moviesSearchTimer = setTimeout(() => {
+    const term = document.getElementById('movies-search').value.trim().toLowerCase();
+    renderMovies(allMovies.filter(m => matchesSearch(m.title, term)));
+  }, 150);
+}
+
+function onEpisodesSearch() {
+  clearTimeout(episodesSearchTimer);
+  episodesSearchTimer = setTimeout(() => {
+    const term = document.getElementById('episodes-search').value.trim().toLowerCase();
+    renderEpisodes(allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)));
+  }, 150);
+}
+
 async function loadMovies(force) {
   const body = document.getElementById('movies-body');
   body.innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
   try {
     const data = await api('/api/subs/movies' + (force ? '?force=1' : ''));
-    if (!data.movies || !data.movies.length) { body.innerHTML = '<tr><td colspan="4">No movies found — check Xtream login under Settings.</td></tr>'; return; }
-    body.innerHTML = data.movies.map(m => `
-      <tr data-type="movie" data-id="${m.id}">
-        <td>${escapeHtml(m.title)}</td>
-        <td class="status-cell">${statusCellHtml('movie', m.id, m.status, m.error)}</td>
-        <td>${(m.languages||[]).join(', ')}</td>
-        <td>${rowActionButtons('movie', m.id, m.status)}</td>
-      </tr>`).join('');
-    applyQueueToRows();
+    allMovies = data.movies || [];
+    if (!allMovies.length) { body.innerHTML = '<tr><td colspan="4">No movies found — check Xtream login under Settings.</td></tr>'; return; }
+    const term = document.getElementById('movies-search').value.trim().toLowerCase();
+    renderMovies(term ? allMovies.filter(m => matchesSearch(m.title, term)) : allMovies);
   } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="4" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
@@ -301,19 +356,10 @@ async function loadEpisodes(force) {
   body.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
   try {
     const data = await api('/api/subs/episodes' + (force ? '?force=1' : ''));
-    if (!data.episodes || !data.episodes.length) { body.innerHTML = '<tr><td colspan="5">No episodes found — check Xtream login under Settings.</td></tr>'; return; }
-    body.innerHTML = data.episodes.map(ep => {
-      const se = `S${String(ep.season_num ?? '?').padStart(2,'0')}E${String(ep.episode_num ?? '?').padStart(2,'0')}`;
-      return `
-      <tr data-type="episode" data-id="${ep.id}">
-        <td>${escapeHtml(ep.series_name)}</td>
-        <td>${se}${ep.episode_title ? ' — ' + escapeHtml(ep.episode_title) : ''}</td>
-        <td class="status-cell">${statusCellHtml('episode', ep.id, ep.status, ep.error)}</td>
-        <td>${(ep.languages||[]).join(', ')}</td>
-        <td>${rowActionButtons('episode', ep.id, ep.status)}</td>
-      </tr>`;
-    }).join('');
-    applyQueueToRows();
+    allEpisodes = data.episodes || [];
+    if (!allEpisodes.length) { body.innerHTML = '<tr><td colspan="5">No episodes found — check Xtream login under Settings.</td></tr>'; return; }
+    const term = document.getElementById('episodes-search').value.trim().toLowerCase();
+    renderEpisodes(term ? allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)) : allEpisodes);
   } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
