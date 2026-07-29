@@ -355,7 +355,12 @@ function wireProgressStream(stdout, durationSec, onProgress) {
     const matches = buf.match(/out_time_ms=(\d+)/g);
     if (matches) {
       const outMs = parseInt(matches[matches.length - 1].split('=')[1], 10);
-      onProgress(Math.min(100, Math.round((outMs / 1e6 / durationSec) * 100)));
+      // One decimal place instead of a whole percent — on a long movie, 1 whole percent can be
+      // several minutes of source video to read through, so rounding to an integer left the
+      // displayed number looking stuck for a long stretch even though ffmpeg was actively
+      // reporting progress the whole time. A decimal ticks up far more often for the same
+      // underlying data, without changing how long the extraction itself actually takes.
+      onProgress(Math.min(100, Math.round((outMs / 1e6 / durationSec) * 1000) / 10));
     }
     buf = buf.slice(-2000);
   });
