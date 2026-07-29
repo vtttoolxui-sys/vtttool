@@ -60,6 +60,9 @@
   .queue-panel { display: none; }
   .queue-panel.show { display: block; }
   .ffmpeg-warning { background: rgba(248,113,113,.12); border-color: var(--danger); color: var(--danger); font-size: .85rem; }
+  .kill-all-panel { font-size: .8rem; color: var(--muted); }
+  .kill-all-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .kill-all-row span { flex: 1; min-width: 260px; }
   .queue-current { background: var(--panel2); border-radius: .5rem; padding: .6rem .9rem; margin-bottom: .75rem; }
   .queue-current-title { font-size: .85rem; display: flex; justify-content: space-between; }
   .queue-current-title .pct { color: var(--accent2); font-weight: 600; }
@@ -104,6 +107,14 @@
       extraction will fail until this is resolved and the service is restarted. If this box
       also runs an XUI/Xtream Codes panel, check <code>which ffmpeg</code> before installing
       anything — don't overwrite its existing ffmpeg symlink.
+    </div>
+
+    <div class="panel kill-all-panel">
+      <div class="kill-all-row">
+        <span>Extraction stuck or an item shows "Extracting…" with nothing actually running? This force-stops the active process, sweeps for orphaned ffmpeg/curl processes left behind by e.g. a service restart, and resets any stuck items back to pending. The waiting queue is left untouched.</span>
+        <button class="btn secondary small" onclick="killAllExtractions()">Force-stop stuck extractions</button>
+      </div>
+      <div class="msg" id="kill-all-msg"></div>
     </div>
 
     <div class="panel queue-panel" id="queue-panel">
@@ -471,6 +482,18 @@ async function dequeueOne(type, id) {
 async function extractBatch(type) {
   const data = await api(`/api/subs/extract-batch?type=${type}`, { method: 'POST' });
   alert(data.queued + ' queued for extraction.');
+}
+
+async function killAllExtractions() {
+  const msg = document.getElementById('kill-all-msg');
+  msg.textContent = 'Stopping…'; msg.className = 'msg';
+  try {
+    const data = await api('/api/subs/kill-all', { method: 'POST' });
+    msg.textContent = `Stopped. Reset ${data.moviesReset} movie(s) and ${data.episodesReset} episode(s) stuck on "Extracting…" back to pending.`;
+    msg.className = 'msg ok';
+    if (currentTab === 'movies') loadMovies();
+    if (currentTab === 'episodes') loadEpisodes();
+  } catch (e) { msg.textContent = e.message; msg.className = 'msg err'; }
 }
 
 function escapeHtml(s) {

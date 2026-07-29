@@ -200,6 +200,24 @@ function fetchUrl(urlStr) {
 const SUBS_DIR = path.join(__dirname, 'data', 'subs');
 fs.mkdirSync(SUBS_DIR, { recursive: true });
 
+// A service restart mid-extraction leaves the spawned ffmpeg/curl child process(es) running,
+// reparented to init — the in-memory queue that used to track them is gone (fresh process,
+// empty state), so nothing will ever kill or report on them again; they just sit there until
+// they eventually finish or the box runs out of resources. Recovered by killing anything whose
+// command line contains our own SUBS_DIR (ffmpeg's output path — a fingerprint that can never
+// match this panel's own separate live-transcoding ffmpeg processes) or the configured
+// xtream_base host on a movie/series URL (the curl leg of a bandwidth-limited extraction).
+// pkill exits 1 when nothing matches, which is the normal/expected case, not a failure.
+function killOrphanedExtractionProcesses() {
+  return new Promise(resolve => {
+    execFile('pkill', ['-9', '-f', SUBS_DIR], () => {
+      const base = getSetting('xtream_base').replace(/\/+$/, '');
+      if (!base) return resolve();
+      execFile('pkill', ['-9', '-f', `${base}/(movie|series)/`], () => resolve());
+    });
+  });
+}
+
 function buildXtreamMovieUrl(streamId, container) {
   const base = getSetting('xtream_base').replace(/\/+$/, '');
   const user = getSetting('xtream_user');
@@ -717,6 +735,13 @@ app.post('/api/settings', (req, res) => {
       return res.status(400).json({ ok: false, error: 'API key must be 6-10 characters (needs to be entered on the TV remote)' });
     }
   }
+  // A bare host:port (no http(s):// scheme) saves without error but silently breaks every
+  // extraction — ffmpeg/curl can't resolve a schemeless URL, and the failure only ever surfaces
+  // later as a confusing "Command failed: ffmpeg -i ips.example.com/movie/..." deep in an
+  // extraction attempt. Auto-prepend http:// so a copy-pasted host:port still works.
+  if (typeof req.body.xtream_base === 'string' && req.body.xtream_base && !/^https?:\/\//i.test(req.body.xtream_base)) {
+    req.body.xtream_base = 'http://' + req.body.xtream_base;
+  }
   // xtream_base/xtream_user must never be silently wiped by an empty submission (e.g. a
   // frontend race where the fields hadn't finished loading yet before Save was clicked) —
   // an empty value here is treated as "no change", same principle as the password fields below.
@@ -942,6 +967,31 @@ app.get('/api/subs/queue', (req, res) => {
     errors: subsQueueState.errors,
     queueItems: subsQueueState.queue.map(i => ({ id: i.id, type: i.type, title: i.title })),
   });
+});
+
+// Emergency stop — kills the actively-tracked extraction (if any), sweeps for orphaned
+// ffmpeg/curl processes a service restart may have left running, and resets any DB rows stuck
+// on 'extracting' back to 'pending'. Rows belonging to the currently-tracked extraction are left
+// alone here — killing its process above already makes extractMovieSubs/extractEpisodeSubs's own
+// catch block mark it 'error' (via currentKilledManually), so touching it again here would race
+// with that. Does NOT clear the waiting queue — only the active/stuck state.
+app.post('/api/subs/kill-all', async (req, res) => {
+  try {
+    const currentId = subsQueueState.currentId, currentType = subsQueueState.currentType;
+    if (subsQueueState.currentProc) {
+      subsQueueState.currentKilledManually = true;
+      try { subsQueueState.currentProc.kill(); } catch (e) { /* already dead */ }
+    }
+    await killOrphanedExtractionProcesses();
+    const now = Math.floor(Date.now() / 1000);
+    const movieRows = db.prepare(
+      `UPDATE vod_subs_status SET status='pending', error='Stopped (background cleanup)', updated_at=? WHERE status='extracting' AND NOT (? = 'movie' AND stream_id = ?)`
+    ).run(now, currentType, currentId);
+    const epRows = db.prepare(
+      `UPDATE series_subs_status SET status='pending', error='Stopped (background cleanup)', updated_at=? WHERE status='extracting' AND NOT (? = 'episode' AND id = ?)`
+    ).run(now, currentType, currentId);
+    res.json({ ok: true, moviesReset: movieRows.changes, episodesReset: epRows.changes });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 async function startup() {
