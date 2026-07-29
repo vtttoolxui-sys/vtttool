@@ -41,6 +41,10 @@
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 500; font-size: .75rem; text-transform: uppercase; }
+  th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sortable:hover { color: var(--text); }
+  th.sortable.sort-asc::after { content: ' \25B2'; color: var(--accent2); }
+  th.sortable.sort-desc::after { content: ' \25BC'; color: var(--accent2); }
   .badge { padding: .15rem .5rem; border-radius: 1rem; font-size: .7rem; font-weight: 600; }
   .badge.done { background: rgba(74,222,128,.15); color: var(--accent); }
   .badge.no_subs { background: rgba(148,163,184,.15); color: var(--muted); }
@@ -131,7 +135,14 @@
       </div>
       <div class="panel">
         <table>
-          <thead><tr><th>Title</th><th>Added</th><th>Status</th><th>Extracted</th><th>Language(s)</th><th></th></tr></thead>
+          <thead><tr>
+            <th class="sortable" data-sort="title" onclick="sortMovies('title')">Title</th>
+            <th class="sortable" data-sort="added" onclick="sortMovies('added')">Added</th>
+            <th class="sortable" data-sort="status" onclick="sortMovies('status')">Status</th>
+            <th class="sortable" data-sort="updated_at" onclick="sortMovies('updated_at')">Extracted</th>
+            <th class="sortable" data-sort="languages" onclick="sortMovies('languages')">Language(s)</th>
+            <th></th>
+          </tr></thead>
           <tbody id="movies-body"><tr><td colspan="6">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -147,7 +158,15 @@
       </div>
       <div class="panel">
         <table>
-          <thead><tr><th>Series</th><th>Episode</th><th>Added</th><th>Status</th><th>Extracted</th><th>Language(s)</th><th></th></tr></thead>
+          <thead><tr>
+            <th class="sortable" data-sort="series_name" onclick="sortEpisodes('series_name')">Series</th>
+            <th class="sortable" data-sort="episode_key" onclick="sortEpisodes('episode_key')">Episode</th>
+            <th class="sortable" data-sort="added" onclick="sortEpisodes('added')">Added</th>
+            <th class="sortable" data-sort="status" onclick="sortEpisodes('status')">Status</th>
+            <th class="sortable" data-sort="updated_at" onclick="sortEpisodes('updated_at')">Extracted</th>
+            <th class="sortable" data-sort="languages" onclick="sortEpisodes('languages')">Language(s)</th>
+            <th></th>
+          </tr></thead>
           <tbody id="episodes-body"><tr><td colspan="7">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -302,6 +321,34 @@ let allMovies = [];
 let allEpisodes = [];
 let moviesSearchTimer = null;
 let episodesSearchTimer = null;
+let moviesSort = { field: 'added', dir: 'desc' };
+let episodesSort = { field: 'added', dir: 'desc' };
+
+function getSortValue(item, field) {
+  if (field === 'languages') return (item.languages || []).length;
+  if (field === 'episode_key') return (item.season_num ?? -1) * 100000 + (item.episode_num ?? -1);
+  return item[field];
+}
+
+function sortList(list, sort) {
+  return [...list].sort((a, b) => {
+    const av = getSortValue(a, sort.field), bv = getSortValue(b, sort.field);
+    const aNull = av === null || av === undefined || av === '';
+    const bNull = bv === null || bv === undefined || bv === '';
+    if (aNull && bNull) return 0;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+    return sort.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function updateSortIndicators(sectionId, sort) {
+  document.querySelectorAll(`#${sectionId} th[data-sort]`).forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === sort.field) th.classList.add(sort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
 
 function renderMovies(list) {
   const body = document.getElementById('movies-body');
@@ -341,20 +388,40 @@ function matchesSearch(title, term) {
   return !term || title.toLowerCase().includes(term);
 }
 
+function refreshMoviesView() {
+  const term = document.getElementById('movies-search').value.trim().toLowerCase();
+  const filtered = term ? allMovies.filter(m => matchesSearch(m.title, term)) : allMovies;
+  renderMovies(sortList(filtered, moviesSort));
+  updateSortIndicators('tab-movies', moviesSort);
+}
+
+function refreshEpisodesView() {
+  const term = document.getElementById('episodes-search').value.trim().toLowerCase();
+  const filtered = term ? allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)) : allEpisodes;
+  renderEpisodes(sortList(filtered, episodesSort));
+  updateSortIndicators('tab-episodes', episodesSort);
+}
+
+function sortMovies(field) {
+  if (moviesSort.field === field) moviesSort.dir = moviesSort.dir === 'asc' ? 'desc' : 'asc';
+  else moviesSort = { field, dir: (field === 'added' || field === 'updated_at') ? 'desc' : 'asc' };
+  refreshMoviesView();
+}
+
+function sortEpisodes(field) {
+  if (episodesSort.field === field) episodesSort.dir = episodesSort.dir === 'asc' ? 'desc' : 'asc';
+  else episodesSort = { field, dir: (field === 'added' || field === 'updated_at') ? 'desc' : 'asc' };
+  refreshEpisodesView();
+}
+
 function onMoviesSearch() {
   clearTimeout(moviesSearchTimer);
-  moviesSearchTimer = setTimeout(() => {
-    const term = document.getElementById('movies-search').value.trim().toLowerCase();
-    renderMovies(allMovies.filter(m => matchesSearch(m.title, term)));
-  }, 150);
+  moviesSearchTimer = setTimeout(refreshMoviesView, 150);
 }
 
 function onEpisodesSearch() {
   clearTimeout(episodesSearchTimer);
-  episodesSearchTimer = setTimeout(() => {
-    const term = document.getElementById('episodes-search').value.trim().toLowerCase();
-    renderEpisodes(allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)));
-  }, 150);
+  episodesSearchTimer = setTimeout(refreshEpisodesView, 150);
 }
 
 async function loadMovies(force) {
@@ -364,8 +431,7 @@ async function loadMovies(force) {
     const data = await api('/api/subs/movies' + (force ? '?force=1' : ''));
     allMovies = data.movies || [];
     if (!allMovies.length) { body.innerHTML = '<tr><td colspan="6">No movies found — check Xtream login under Settings.</td></tr>'; return; }
-    const term = document.getElementById('movies-search').value.trim().toLowerCase();
-    renderMovies(term ? allMovies.filter(m => matchesSearch(m.title, term)) : allMovies);
+    refreshMoviesView();
   } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
@@ -376,8 +442,7 @@ async function loadEpisodes(force) {
     const data = await api('/api/subs/episodes' + (force ? '?force=1' : ''));
     allEpisodes = data.episodes || [];
     if (!allEpisodes.length) { body.innerHTML = '<tr><td colspan="7">No episodes found — check Xtream login under Settings.</td></tr>'; return; }
-    const term = document.getElementById('episodes-search').value.trim().toLowerCase();
-    renderEpisodes(term ? allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)) : allEpisodes);
+    refreshEpisodesView();
   } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
