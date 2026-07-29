@@ -385,6 +385,23 @@ function ffmpegExtractAllSubtitles(url, subs, outDir, durationSec, onProgress, m
   });
 }
 
+// ffmpeg's WebVTT muxer omits the hour component on cue timestamps under an hour long
+// (e.g. "00:07.004 --> 00:10.407" instead of "00:00:07.004 --> 00:00:10.407"). That's valid
+// per the WebVTT spec, but several embedded/TV subtitle parsers (LG webOS included) are
+// stricter than browsers and silently fail to decode any cues at all without the full
+// HH:MM:SS.mmm form — which looks exactly like "the track exists but shows no text". Normalize
+// every timestamp to always include hours right after extraction, once, rather than relying on
+// every downstream player to handle the spec's optional short form.
+function normalizeVttTimestamps(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const padTimestamp = ts => (ts.split(':').length === 2 ? '00:' + ts : ts);
+  const fixed = content.replace(
+    /(\d{1,2}(?::\d{2})?:\d{2}\.\d{3})(\s*-->\s*)(\d{1,2}(?::\d{2})?:\d{2}\.\d{3})/g,
+    (match, start, arrow, end) => padTimestamp(start) + arrow + padTimestamp(end)
+  );
+  if (fixed !== content) fs.writeFileSync(filePath, fixed);
+}
+
 async function extractMovieSubs(streamId, title, container) {
   const url = buildXtreamMovieUrl(streamId, container);
   const outDir = path.join(SUBS_DIR, 'movies', String(streamId));
@@ -412,6 +429,7 @@ async function extractMovieSubs(streamId, title, container) {
     const maxBandwidthMbit = getSettingInt('subs_max_bandwidth_mbit');
     await ffmpegExtractAllSubtitles(url, toExtract, outDir, durationSec, pct => { subsQueueState.currentProgressPct = pct; }, maxBandwidthMbit,
       proc => { subsQueueState.currentProc = proc; });
+    for (const s of toExtract) normalizeVttTimestamps(path.join(outDir, `${s.lang}.vtt`));
     const langs = toExtract.map(s => s.lang);
     const durationSecTaken = Math.round((Date.now() - startedAtMs) / 1000);
     db.prepare(`UPDATE vod_subs_status SET status='done', languages=?, error=NULL, duration_sec=?, updated_at=? WHERE stream_id=?`)
@@ -454,6 +472,7 @@ async function extractEpisodeSubs(episodeId, meta) {
     const maxBandwidthMbit = getSettingInt('subs_max_bandwidth_mbit');
     await ffmpegExtractAllSubtitles(url, toExtract, outDir, durationSec, pct => { subsQueueState.currentProgressPct = pct; }, maxBandwidthMbit,
       proc => { subsQueueState.currentProc = proc; });
+    for (const s of toExtract) normalizeVttTimestamps(path.join(outDir, `${s.lang}.vtt`));
     const langs = toExtract.map(s => s.lang);
     const durationSecTaken = Math.round((Date.now() - startedAtMs) / 1000);
     db.prepare(`UPDATE series_subs_status SET status='done', languages=?, error=NULL, duration_sec=?, updated_at=? WHERE id=?`)
