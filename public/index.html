@@ -225,7 +225,7 @@
         </div>
       </div>
 
-      <button class="btn" onclick="saveSettings()">Save settings</button>
+      <button class="btn" id="save-settings-btn" onclick="saveSettings()" disabled>Save settings</button>
       <div class="msg" id="settings-msg"></div>
     </section>
   </main>
@@ -550,17 +550,27 @@ async function pollQueue() {
 }
 
 async function loadSettings() {
-  const s = await api('/api/settings');
-  document.getElementById('xtream_base').value = s.xtream_base || '';
-  document.getElementById('xtream_user').value = s.xtream_user || '';
-  document.getElementById('xtream_pass').placeholder = s.xtream_pass || '';
-  document.getElementById('subs_api_key').value = s.subs_api_key || '';
-  document.getElementById('subs_max_bandwidth_mbit').value = s.subs_max_bandwidth_mbit || '0';
-  document.getElementById('xui_sync_hours').value = s.xui_sync_hours || '2';
-  document.getElementById('subs_auto_enabled').checked = s.subs_auto_enabled === '1';
-  document.getElementById('subs_batch_interval_hours').value = s.subs_batch_interval_hours || '6';
-  document.getElementById('webif_username').value = s.webif_username || '';
-  document.getElementById('webif_password').placeholder = s.webif_password || '';
+  const saveBtn = document.getElementById('save-settings-btn');
+  saveBtn.disabled = true;
+  try {
+    const s = await api('/api/settings');
+    document.getElementById('xtream_base').value = s.xtream_base || '';
+    document.getElementById('xtream_user').value = s.xtream_user || '';
+    document.getElementById('xtream_pass').placeholder = s.xtream_pass || '';
+    document.getElementById('subs_api_key').value = s.subs_api_key || '';
+    document.getElementById('subs_max_bandwidth_mbit').value = s.subs_max_bandwidth_mbit || '0';
+    document.getElementById('xui_sync_hours').value = s.xui_sync_hours || '2';
+    document.getElementById('subs_auto_enabled').checked = s.subs_auto_enabled === '1';
+    document.getElementById('subs_batch_interval_hours').value = s.subs_batch_interval_hours || '6';
+    document.getElementById('webif_username').value = s.webif_username || '';
+    document.getElementById('webif_password').placeholder = s.webif_password || '';
+    saveBtn.disabled = false;
+  } catch (e) {
+    if (e.message !== 'unauthorized') {
+      document.getElementById('settings-msg').textContent = 'Failed to load settings — reload the page before saving, to avoid wiping anything.';
+      document.getElementById('settings-msg').className = 'msg err';
+    }
+  }
 }
 
 async function saveSettings() {

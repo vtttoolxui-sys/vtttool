@@ -699,14 +699,14 @@ app.get('/api/settings', (req, res) => {
   res.json({
     xtream_base:            getSetting('xtream_base'),
     xtream_user:            getSetting('xtream_user'),
-    xtream_pass:            getSetting('xtream_pass') ? '***sat***' : '',
+    xtream_pass:            getSetting('xtream_pass') ? '***set***' : '',
     xui_sync_hours:         getSetting('xui_sync_hours') || '2',
     subs_max_bandwidth_mbit: getSetting('subs_max_bandwidth_mbit') || '0',
     subs_auto_enabled:      getSetting('subs_auto_enabled') || '0',
     subs_batch_interval_hours: getSetting('subs_batch_interval_hours') || '6',
     subs_api_key:           ensureSubsApiKey(), // vises i klartekst — skal tastes ind i webOS-appen
     webif_username:         getSetting('webif_username'),
-    webif_password:         getSetting('webif_password_hash') ? '***sat***' : '',
+    webif_password:         getSetting('webif_password_hash') ? '***set***' : '',
   });
 });
 
@@ -717,17 +717,21 @@ app.post('/api/settings', (req, res) => {
       return res.status(400).json({ ok: false, error: 'API key must be 6-10 characters (needs to be entered on the TV remote)' });
     }
   }
-  const secret = ['xtream_pass'];
+  // xtream_base/xtream_user must never be silently wiped by an empty submission (e.g. a
+  // frontend race where the fields hadn't finished loading yet before Save was clicked) —
+  // an empty value here is treated as "no change", same principle as the password fields below.
+  const protectFromBlank = ['xtream_base', 'xtream_user', 'xtream_pass'];
   const all = ['xtream_base', 'xtream_user', 'xtream_pass', 'xui_sync_hours',
                'subs_max_bandwidth_mbit', 'subs_auto_enabled', 'subs_batch_interval_hours', 'subs_api_key'];
   for (const f of all) {
     if (req.body[f] !== undefined) {
-      if (secret.includes(f) && req.body[f] === '***sat***') continue;
+      if (f === 'xtream_pass' && req.body[f] === '***set***') continue;
+      if (protectFromBlank.includes(f) && req.body[f] === '') continue;
       setSetting(f, req.body[f]);
     }
   }
   if (req.body.webif_username !== undefined) setSetting('webif_username', req.body.webif_username);
-  if (req.body.webif_password && req.body.webif_password !== '***sat***') {
+  if (req.body.webif_password && req.body.webif_password !== '***set***') {
     const salt = crypto.randomBytes(32).toString('hex');
     const hash = hashPassword(req.body.webif_password, salt);
     setSetting('webif_password_hash', hash);
