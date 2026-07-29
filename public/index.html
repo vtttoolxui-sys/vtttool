@@ -505,12 +505,41 @@ function escapeHtml(s) {
 }
 
 let lastQueueState = null;
+let queuedKeys = new Set(); // "type:id" for every item currently waiting in the queue (not the active one)
 
 function applyQueueToRows() {
   // Clear any leftover progress markers first (fresh row render has none active yet).
   document.querySelectorAll('.row-progress').forEach(el => el.classList.add('hidden'));
+  // Freshly-rendered rows (e.g. after a search/sort/reload) need the "Queued" badge reapplied —
+  // the underlying data still reflects the real DB status, "Queued" is a display-only overlay.
+  queuedKeys.forEach(key => {
+    const [type, id] = key.split(':');
+    const badge = document.getElementById(`badge-${type}-${id}`);
+    if (badge) badge.innerHTML = statusBadge('pending');
+  });
   if (!lastQueueState || !lastQueueState.currentId) return;
   updateRowProgress(lastQueueState.currentType, lastQueueState.currentId, lastQueueState.currentProgressPct || 0);
+}
+
+// Called every poll tick with the current queueItems — patches only the badges that actually
+// changed membership (entered or left the queue) rather than touching every row.
+function updateQueueBadges(queueItems) {
+  const newKeys = new Set((queueItems || []).map(i => `${i.type}:${i.id}`));
+  const changed = [...queuedKeys, ...newKeys].filter(k => queuedKeys.has(k) !== newKeys.has(k));
+  queuedKeys = newKeys;
+  changed.forEach(key => {
+    const [type, idStr] = key.split(':');
+    const id = Number(idStr);
+    const badge = document.getElementById(`badge-${type}-${id}`);
+    if (!badge) return;
+    if (newKeys.has(key)) {
+      badge.innerHTML = statusBadge('pending');
+    } else {
+      const list = type === 'movie' ? allMovies : allEpisodes;
+      const item = list.find(x => x.id === id);
+      if (item) badge.innerHTML = statusBadge(item.status, item.duration_sec);
+    }
+  });
 }
 
 function updateRowProgress(type, id, pct) {
@@ -588,6 +617,7 @@ async function pollQueue() {
       if (q.running && q.currentId != null) {
         updateRowProgress(q.currentType, q.currentId, q.currentProgressPct || 0);
       }
+      updateQueueBadges(q.queueItems);
       applyLastCompleted(q.lastCompleted);
     } catch (e) {}
   };
