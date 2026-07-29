@@ -131,8 +131,8 @@
       </div>
       <div class="panel">
         <table>
-          <thead><tr><th>Title</th><th>Status</th><th>Language(s)</th><th></th></tr></thead>
-          <tbody id="movies-body"><tr><td colspan="4">Loading…</td></tr></tbody>
+          <thead><tr><th>Title</th><th>Added</th><th>Status</th><th>Extracted</th><th>Language(s)</th><th></th></tr></thead>
+          <tbody id="movies-body"><tr><td colspan="6">Loading…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -147,8 +147,8 @@
       </div>
       <div class="panel">
         <table>
-          <thead><tr><th>Series</th><th>Episode</th><th>Status</th><th>Language(s)</th><th></th></tr></thead>
-          <tbody id="episodes-body"><tr><td colspan="5">Loading…</td></tr></tbody>
+          <thead><tr><th>Series</th><th>Episode</th><th>Added</th><th>Status</th><th>Extracted</th><th>Language(s)</th><th></th></tr></thead>
+          <tbody id="episodes-body"><tr><td colspan="7">Loading…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -262,9 +262,23 @@ function switchTab(tab) {
   if (tab === 'settings') loadSettings();
 }
 
-function statusBadge(status) {
+function statusBadge(status, durationSec) {
   const labels = { done: 'Done', no_subs: 'No subtitles', error: 'Error', extracting: 'Extracting…', pending: 'Queued', unknown: 'Not extracted' };
-  return `<span class="badge ${status}">${labels[status] || status}</span>`;
+  const suffix = (status === 'done' && durationSec != null) ? ` (${formatDuration(durationSec)})` : '';
+  return `<span class="badge ${status}">${labels[status] || status}${suffix}</span>`;
+}
+
+function formatDuration(sec) {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+function formatDate(unixSec) {
+  if (!unixSec) return '—';
+  const d = new Date(unixSec * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function rowActionButtons(type, id, status) {
@@ -274,9 +288,9 @@ function rowActionButtons(type, id, status) {
   </div>`;
 }
 
-function statusCellHtml(type, id, status, error) {
+function statusCellHtml(type, id, status, error, durationSec) {
   return `
-    <div class="badge-wrap" id="badge-${type}-${id}">${statusBadge(status)}</div>
+    <div class="badge-wrap" id="badge-${type}-${id}">${statusBadge(status, durationSec)}</div>
     ${error ? `<div class="row-err">${escapeHtml(error)}</div>` : ''}
     <div class="row-progress hidden" id="prog-${type}-${id}">
       <span class="pct" id="prog-${type}-${id}-pct">0%</span>
@@ -291,11 +305,13 @@ let episodesSearchTimer = null;
 
 function renderMovies(list) {
   const body = document.getElementById('movies-body');
-  if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="search-empty-hint">No matching titles.</td></tr>'; return; }
   body.innerHTML = list.map(m => `
     <tr data-type="movie" data-id="${m.id}">
       <td>${escapeHtml(m.title)}</td>
-      <td class="status-cell">${statusCellHtml('movie', m.id, m.status, m.error)}</td>
+      <td>${formatDate(m.added)}</td>
+      <td class="status-cell">${statusCellHtml('movie', m.id, m.status, m.error, m.duration_sec)}</td>
+      <td>${m.status === 'done' || m.status === 'no_subs' || m.status === 'error' ? formatDate(m.updated_at) : '—'}</td>
       <td>${(m.languages||[]).join(', ')}</td>
       <td>${rowActionButtons('movie', m.id, m.status)}</td>
     </tr>`).join('');
@@ -304,14 +320,16 @@ function renderMovies(list) {
 
 function renderEpisodes(list) {
   const body = document.getElementById('episodes-body');
-  if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="search-empty-hint">No matching titles.</td></tr>'; return; }
+  if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="search-empty-hint">No matching titles.</td></tr>'; return; }
   body.innerHTML = list.map(ep => {
     const se = `S${String(ep.season_num ?? '?').padStart(2,'0')}E${String(ep.episode_num ?? '?').padStart(2,'0')}`;
     return `
     <tr data-type="episode" data-id="${ep.id}">
       <td>${escapeHtml(ep.series_name)}</td>
       <td>${se}${ep.episode_title ? ' — ' + escapeHtml(ep.episode_title) : ''}</td>
-      <td class="status-cell">${statusCellHtml('episode', ep.id, ep.status, ep.error)}</td>
+      <td>${formatDate(ep.added)}</td>
+      <td class="status-cell">${statusCellHtml('episode', ep.id, ep.status, ep.error, ep.duration_sec)}</td>
+      <td>${ep.status === 'done' || ep.status === 'no_subs' || ep.status === 'error' ? formatDate(ep.updated_at) : '—'}</td>
       <td>${(ep.languages||[]).join(', ')}</td>
       <td>${rowActionButtons('episode', ep.id, ep.status)}</td>
     </tr>`;
@@ -341,26 +359,26 @@ function onEpisodesSearch() {
 
 async function loadMovies(force) {
   const body = document.getElementById('movies-body');
-  body.innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="6">Loading…</td></tr>';
   try {
     const data = await api('/api/subs/movies' + (force ? '?force=1' : ''));
     allMovies = data.movies || [];
-    if (!allMovies.length) { body.innerHTML = '<tr><td colspan="4">No movies found — check Xtream login under Settings.</td></tr>'; return; }
+    if (!allMovies.length) { body.innerHTML = '<tr><td colspan="6">No movies found — check Xtream login under Settings.</td></tr>'; return; }
     const term = document.getElementById('movies-search').value.trim().toLowerCase();
     renderMovies(term ? allMovies.filter(m => matchesSearch(m.title, term)) : allMovies);
-  } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="4" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
+  } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
 async function loadEpisodes(force) {
   const body = document.getElementById('episodes-body');
-  body.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
   try {
     const data = await api('/api/subs/episodes' + (force ? '?force=1' : ''));
     allEpisodes = data.episodes || [];
-    if (!allEpisodes.length) { body.innerHTML = '<tr><td colspan="5">No episodes found — check Xtream login under Settings.</td></tr>'; return; }
+    if (!allEpisodes.length) { body.innerHTML = '<tr><td colspan="7">No episodes found — check Xtream login under Settings.</td></tr>'; return; }
     const term = document.getElementById('episodes-search').value.trim().toLowerCase();
     renderEpisodes(term ? allEpisodes.filter(ep => matchesSearch(`${ep.series_name} ${ep.episode_title || ''}`, term)) : allEpisodes);
-  } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
+  } catch (e) { if (e.message !== 'unauthorized') body.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">${escapeHtml(e.message)}</td></tr>`; }
 }
 
 async function extractOne(type, id, btn) {
